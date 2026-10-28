@@ -7397,7 +7397,6 @@ async function getData() {
     }
     throw new Error("La respuesta de Google Sheets no contiene una lista de productos. Revisa la estructura del JSON.");
 }
-async 
 // Actualiza las tarjetas estáticas del inicio, carruseles y secciones
 // usando el mismo objeto products que ya se alimenta desde Google Sheets.
 function updateProductCardsFromData() {
@@ -7463,7 +7462,7 @@ function updateProductCardsFromData() {
     console.info(`[BMARKET] Tarjetas/carruseles actualizados con Google Sheets: ${updated}`);
 }
 
-function syncProductsFromGoogleSheets() {
+async function syncProductsFromGoogleSheets() {
     try {
         const rows = (await getData()).map(convertirFilaSheet);
         const byId = new Map(rows.filter(r => r.id).map(r => [r.id, r]));
@@ -7541,6 +7540,12 @@ if (document.readyState === "loading") {
 } else {
     syncProductsFromGoogleSheets();
 }
+
+
+// Garantiza que las tarjetas HTML con onclick puedan abrir el detalle.
+window.showProductDetail = function(productId) {
+    return showProductDetail(productId);
+};
 
 </script></body>
 </html>
