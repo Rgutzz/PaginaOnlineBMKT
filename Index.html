@@ -7397,71 +7397,61 @@ async function getData() {
     }
     throw new Error("La respuesta de Google Sheets no contiene una lista de productos. Revisa la estructura del JSON.");
 }
-// Actualiza las tarjetas estáticas del inicio, carruseles y secciones
+// Actualiza los datos de las tarjetas estáticas sin reemplazar sus fotos originales
 // usando el mismo objeto products que ya se alimenta desde Google Sheets.
 function updateProductCardsFromData() {
-    const cards = document.querySelectorAll('[onclick*="showProductDetail("]');
+    // Recorre tarjetas del inicio, carruseles y páginas de categorías.
+    const cardEls = document.querySelectorAll('[onclick*="showProductDetail("]');
     let updated = 0;
+    const seen = new Set();
 
-    cards.forEach(card => {
+    cardEls.forEach(card => {
         const onclick = card.getAttribute("onclick") || "";
         const match = onclick.match(/showProductDetail\(\s*['"]([^'"]+)['"]\s*\)/);
         if (!match) return;
 
-        const product = products[match[1]];
-        if (!product) return;
+        const productKey = match[1];
+        const product = products[productKey];
+        if (!product || seen.has(card)) return;
+        seen.add(card);
 
-        const images = Array.isArray(product.images) ? product.images.filter(Boolean) : [];
-        const imageEls = card.querySelectorAll("img");
-
-        if (images[0] && imageEls[0]) {
-            imageEls[0].src = images[0];
-            imageEls[0].alt = product.name || "Producto BMARKET";
-            imageEls[0].loading = "lazy";
-        }
-        if (imageEls[1]) {
-            if (images[1]) {
-                imageEls[1].src = images[1];
-                imageEls[1].alt = (product.name || "Producto BMARKET") + " - vista alternativa";
-                imageEls[1].classList.remove("hidden");
-            } else {
-                // Si no hay segunda foto, no mostrar una imagen antigua de otro producto.
-                imageEls[1].classList.add("hidden");
-            }
-        }
-
-        const titleEl = card.querySelector("h3");
+        // Nombre, descripción corta y código (cuando la tarjeta ya tiene esos campos).
+        const titleEl = card.querySelector("h3, h4");
         if (titleEl && product.name) {
             titleEl.textContent = product.name;
             titleEl.title = product.name;
         }
+        const descEl = card.querySelector(".product-description, [data-product-description]");
+        if (descEl && product.description) descEl.textContent = product.description;
 
-        // En las tarjetas existentes, el precio está en un span dentro del bloque p-3.
-        const infoBlock = card.querySelector(".p-3");
-        if (infoBlock) {
-            const priceEls = infoBlock.querySelectorAll("span");
-            if (priceEls.length) {
-                const price = Number(product.price);
-                const oldPrice = Number(product.oldPrice);
-                if (Number.isFinite(price)) {
-                    if (product.oldPrice !== "" && product.oldPrice !== null &&
-                        product.oldPrice !== undefined && Number.isFinite(oldPrice) && oldPrice > price) {
-                        priceEls[0].innerHTML =
-                            `<span class="text-red-600 font-bold">S/ ${price.toFixed(2)}</span> ` +
-                            `<span class="line-through text-gray-400 text-xs ml-1">S/ ${oldPrice.toFixed(2)}</span>`;
-                    } else {
-                        priceEls[0].textContent = `S/ ${price.toFixed(2)}`;
-                    }
-                }
+        // Se conservan las fotos originales del HTML en TODAS las secciones.
+        // Google Sheets sigue actualizando nombres, descripciones y precios,
+        // pero no reemplaza las imágenes de las tarjetas al cargar la página.
+
+        // Encuentra el elemento de precio tanto en las tarjetas del carrusel (.p-3)
+        // como en las tarjetas de categorías (bloque .mt-2).
+        const priceEl = Array.from(card.querySelectorAll("span, p"))
+            .find(el => /S\/\s*\d/.test(el.textContent || "") ||
+                ((el.classList.contains("font-bold") || el.classList.contains("font-semibold")) &&
+                 /text-(?:sm|base|lg|xl)/.test(el.className || "")));
+
+        const price = Number(String(product.price ?? "").replace(",", "."));
+        const oldPrice = Number(String(product.oldPrice ?? "").replace(",", "."));
+        if (priceEl && Number.isFinite(price)) {
+            if (product.oldPrice !== "" && product.oldPrice !== null &&
+                product.oldPrice !== undefined && Number.isFinite(oldPrice) && oldPrice > price) {
+                priceEl.innerHTML =
+                    `<span class="text-red-600 font-bold">S/ ${price.toFixed(2)}</span> ` +
+                    `<span class="line-through text-gray-400 text-xs ml-1">S/ ${oldPrice.toFixed(2)}</span>`;
+            } else {
+                priceEl.textContent = `S/ ${price.toFixed(2)}`;
             }
         }
-
         updated++;
     });
 
-    console.info(`[BMARKET] Tarjetas/carruseles actualizados con Google Sheets: ${updated}`);
+    console.info(`[BMARKET] Tarjetas de inicio, carruseles y categorías actualizadas: ${updated}`);
 }
-
 async function syncProductsFromGoogleSheets() {
     try {
         const rows = (await getData()).map(convertirFilaSheet);
