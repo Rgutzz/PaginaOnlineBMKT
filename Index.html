@@ -6082,14 +6082,7 @@ const colorMap = {
             }
         };
 
-        getData()
-    .then(productos => {
-        console.log("Total de productos:", productos.length);
-        console.table(productos);
-    })
-    .catch(error => {
-        console.error("No se pudo cargar el inventario:", error);
-    });
+        
 
 function toggleMobileMenu() {
     const mobileMenu = document.getElementById('mobile-menu');
@@ -7348,19 +7341,46 @@ function parsearMapaStock(value) {
     return result;
 }
 function convertirFilaSheet(row) {
+    const pick = (...names) => obtenerCampo(row, ...names);
+    const asArray = (value, fallback = []) => {
+        const parsed = parseSheetJSON(value, value);
+        if (Array.isArray(parsed)) return parsed;
+        if (typeof parsed === "string" && parsed.trim()) {
+            // Admite listas simples separadas por salto de línea o coma.
+            return parsed.split(/\r?\n|,(?![^(]*\))/).map(s => s.trim()).filter(Boolean);
+        }
+        return fallback;
+    };
+    const asObject = (value) => {
+        const parsed = parseSheetJSON(value, {});
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    };
+    const rawFeatures = pick("features", "Características", "Características / Material", "Material");
+    let features = asArray(rawFeatures, []);
+    if (typeof rawFeatures === "string" && !rawFeatures.trim().startsWith("[")) {
+        features = rawFeatures.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    }
+
     return {
         raw: row,
-        id: String(obtenerCampo(row, "ID", "id") ?? "").trim(),
-        name: String(obtenerCampo(row, "name", "Nombre", "nombre") ?? "").trim(),
-        code: String(obtenerCampo(row, "code", "Código", "codigo") ?? "").trim(),
-        codesByVariant: parseSheetJSON(obtenerCampo(row, "codesByVariant", "codes_by_variant"), {}),
-        stockByVariant: parsearMapaStock(obtenerCampo(row, "stockByVariant", "stock_by_variant")),
-        imagesByColor: parseSheetJSON(obtenerCampo(row, "imagesByColor", "images_by_color"), {}),
-        colors: parseSheetJSON(obtenerCampo(row, "colors", "colores"), []),
-        sizes: parseSheetJSON(obtenerCampo(row, "sizes", "tallas"), []),
-        images: parseSheetJSON(obtenerCampo(row, "images", "imagenes"), []),
-        price: obtenerCampo(row, "price", "precio"),
-        oldPrice: obtenerCampo(row, "oldPrice", "old_price", "precioAnterior")
+        id: String(pick("ID", "id", "ID del producto (clave en la web)") ?? "").trim(),
+        name: String(pick("name", "Nombre", "nombre", "Nombre (HTML: ...)", "Nombre (HTML)") ?? "").trim(),
+        code: String(pick("code", "Código general", "Código", "codigo") ?? "").trim(),
+        description: String(pick("description", "Descripción corta", "Descripcion corta") ?? ""),
+        fullDescription: String(pick("fullDescription", "Descripción completa", "Descripcion completa") ?? ""),
+        features,
+        images: asArray(pick("images", "Imágenes (JSON/lista de URL)", "Imágenes", "Imagenes"), []),
+        category: String(pick("category", "Categoría", "Categoria") ?? "").trim().toLowerCase(),
+        category2: String(pick("category2", "Subcategoría (category2)", "Subcategoria") ?? "").trim(),
+        colors: asArray(pick("colors", "Colores (JSON/lista)", "Colores"), []),
+        sizes: asArray(pick("sizes", "Tallas (JSON/lista)", "Tallas"), []),
+        hasColors: String(pick("hasColors", "Tiene colores") ?? "").toLowerCase() === "true",
+        hasSizes: String(pick("hasSizes", "Tiene tallas") ?? "").toLowerCase() === "true",
+        imagesByColor: asObject(pick("imagesByColor", "Imágenes por color (JSON)", "Imagenes por color")),
+        codesByVariant: asObject(pick("codesByVariant", "Códigos por variante (JSON)", "Codigos por variante")),
+        stockByVariant: parsearMapaStock(pick("stockByVariant", "Stock por variante (JSON)", "Stock por variante")),
+        price: pick("price", "Precio", "precio"),
+        oldPrice: pick("oldPrice", "Precio anterior", "precioAnterior")
     };
 }
 function extraerCodigos(product) {
@@ -7406,11 +7426,28 @@ async function syncProductsFromGoogleSheets() {
                 continue;
             }
 
+            // Importar todos los campos editables desde Sheets, manteniendo el objeto
+            // del producto como estructura base para no romper la interfaz.
+            product.name = row.name || product.name;
+            product.description = row.description || product.description || "";
+            product.fullDescription = row.fullDescription || product.fullDescription || "";
+            if (row.features && row.features.length) product.features = row.features;
+            if (row.images && row.images.length) {
+                product.images = row.images;
+                product.image = row.images[0];
+            }
+            if (row.category) {
+                const category = row.category.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (["ropa", "joyas", "accesorios"].includes(category)) product.category = category;
+            }
+            if (row.category2) product.category2 = row.category2;
             product.stockByVariant = row.stockByVariant || {};
             if (row.codesByVariant && Object.keys(row.codesByVariant).length) product.codesByVariant = row.codesByVariant;
-            if (Array.isArray(row.colors) && row.colors.length) product.colors = row.colors;
-            if (Array.isArray(row.sizes) && row.sizes.length) product.sizes = row.sizes;
+            if (row.colors && row.colors.length) product.colors = row.colors;
+            if (row.sizes && row.sizes.length) product.sizes = row.sizes;
             if (row.imagesByColor && Object.keys(row.imagesByColor).length) product.imagesByColor = row.imagesByColor;
+            if (row.hasColors) product.hasColors = true;
+            if (row.hasSizes) product.hasSizes = true;
 
             const price = Number(String(row.price ?? "").replace(",", "."));
             if (row.price !== "" && row.price !== undefined && Number.isFinite(price)) product.price = price;
@@ -7430,6 +7467,8 @@ async function syncProductsFromGoogleSheets() {
         inventarioCargado = false;
     }
 }
+window.getData = getData;
+
 if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", syncProductsFromGoogleSheets);
 } else {
