@@ -7397,7 +7397,73 @@ async function getData() {
     }
     throw new Error("La respuesta de Google Sheets no contiene una lista de productos. Revisa la estructura del JSON.");
 }
-async function syncProductsFromGoogleSheets() {
+async 
+// Actualiza las tarjetas estáticas del inicio, carruseles y secciones
+// usando el mismo objeto products que ya se alimenta desde Google Sheets.
+function updateProductCardsFromData() {
+    const cards = document.querySelectorAll('[onclick*="showProductDetail("]');
+    let updated = 0;
+
+    cards.forEach(card => {
+        const onclick = card.getAttribute("onclick") || "";
+        const match = onclick.match(/showProductDetail\(\s*['"]([^'"]+)['"]\s*\)/);
+        if (!match) return;
+
+        const product = products[match[1]];
+        if (!product) return;
+
+        const images = Array.isArray(product.images) ? product.images.filter(Boolean) : [];
+        const imageEls = card.querySelectorAll("img");
+
+        if (images[0] && imageEls[0]) {
+            imageEls[0].src = images[0];
+            imageEls[0].alt = product.name || "Producto BMARKET";
+            imageEls[0].loading = "lazy";
+        }
+        if (imageEls[1]) {
+            if (images[1]) {
+                imageEls[1].src = images[1];
+                imageEls[1].alt = (product.name || "Producto BMARKET") + " - vista alternativa";
+                imageEls[1].classList.remove("hidden");
+            } else {
+                // Si no hay segunda foto, no mostrar una imagen antigua de otro producto.
+                imageEls[1].classList.add("hidden");
+            }
+        }
+
+        const titleEl = card.querySelector("h3");
+        if (titleEl && product.name) {
+            titleEl.textContent = product.name;
+            titleEl.title = product.name;
+        }
+
+        // En las tarjetas existentes, el precio está en un span dentro del bloque p-3.
+        const infoBlock = card.querySelector(".p-3");
+        if (infoBlock) {
+            const priceEls = infoBlock.querySelectorAll("span");
+            if (priceEls.length) {
+                const price = Number(product.price);
+                const oldPrice = Number(product.oldPrice);
+                if (Number.isFinite(price)) {
+                    if (product.oldPrice !== "" && product.oldPrice !== null &&
+                        product.oldPrice !== undefined && Number.isFinite(oldPrice) && oldPrice > price) {
+                        priceEls[0].innerHTML =
+                            `<span class="text-red-600 font-bold">S/ ${price.toFixed(2)}</span> ` +
+                            `<span class="line-through text-gray-400 text-xs ml-1">S/ ${oldPrice.toFixed(2)}</span>`;
+                    } else {
+                        priceEls[0].textContent = `S/ ${price.toFixed(2)}`;
+                    }
+                }
+            }
+        }
+
+        updated++;
+    });
+
+    console.info(`[BMARKET] Tarjetas/carruseles actualizados con Google Sheets: ${updated}`);
+}
+
+function syncProductsFromGoogleSheets() {
     try {
         const rows = (await getData()).map(convertirFilaSheet);
         const byId = new Map(rows.filter(r => r.id).map(r => [r.id, r]));
@@ -7457,6 +7523,7 @@ async function syncProductsFromGoogleSheets() {
         }
 
         inventarioCargado = true;
+        updateProductCardsFromData();
         if (currentProduct && products[currentProduct] && typeof updateStockDisplay === "function") updateStockDisplay();
         console.info(`[BMARKET] Google Sheets: ${rows.length} filas recibidas; ${matched}/${Object.keys(products).length} productos vinculados.`);
         if (matched < Object.keys(products).length) console.warn("[BMARKET] Productos sin vincular:", unmatched);
