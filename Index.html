@@ -6082,7 +6082,14 @@ const colorMap = {
             }
         };
 
-        
+        getData()
+    .then(productos => {
+        console.log("Total de productos:", productos.length);
+        console.table(productos);
+    })
+    .catch(error => {
+        console.error("No se pudo cargar el inventario:", error);
+    });
 
 function toggleMobileMenu() {
     const mobileMenu = document.getElementById('mobile-menu');
